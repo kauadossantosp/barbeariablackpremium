@@ -5,7 +5,7 @@ import { Scissors, Crown, User, ArrowLeft, Check, Sparkles } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext';
 import { createBarbershop, createUser, getUser, getBarbershops } from '@/lib/storage';
 
-type AuthMode = 'select' | 'login-client' | 'login-owner' | 'register';
+type AuthMode = 'select' | 'login-client' | 'login-owner' | 'register' | 'register-client';
 
 const plans = [
   { id: 'starter' as const, name: 'Starter', price: 'R$ 49/mês', features: ['Até 2 barbeiros', 'Agendamento online', 'Dashboard básico'] },
@@ -34,6 +34,16 @@ const Auth = () => {
       navigate(role === 'client' ? '/client' : '/owner');
     } else {
       setError('Senha incorreta');
+    }
+  };
+
+  const handleRegisterClient = () => {
+    setError('');
+    if (!name || !email || !password) { setError('Preencha todos os campos'); return; }
+    if (getUser(email)) { setError('Email já cadastrado'); return; }
+    createUser({ email, password, name, role: 'client' });
+    if (login(email, password)) {
+      navigate('/client');
     }
   };
 
@@ -148,10 +158,51 @@ const Auth = () => {
                   Entrar
                 </button>
                 {mode === 'login-client' && (
-                  <p className="text-xs text-center text-muted-foreground">
-                    Não tem conta? Registre-se ao agendar um serviço
-                  </p>
+                  <button onClick={() => { setMode('register-client'); setError(''); }}
+                    className="w-full text-center text-sm text-primary hover:underline transition-all">
+                    Não tem conta? Criar conta de cliente
+                  </button>
                 )}
+              </div>
+            </motion.div>
+          )}
+
+          {mode === 'register-client' && (
+            <motion.div key="register-client" {...fadeVariant} transition={{ duration: 0.3 }} className="space-y-6">
+              <button onClick={() => { setMode('login-client'); setError(''); }} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+                <ArrowLeft className="w-4 h-4" /> Voltar ao Login
+              </button>
+
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-serif font-bold text-foreground">Criar Conta</h2>
+                <p className="text-muted-foreground text-sm">Cadastre-se para agendar serviços</p>
+              </div>
+
+              <div className="glass-card p-6 space-y-4">
+                {error && <p className="text-destructive text-sm text-center">{error}</p>}
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">Nome completo</label>
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="Seu nome"
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">Email</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">Senha</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+                </div>
+                <button onClick={handleRegisterClient}
+                  className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all">
+                  Criar Conta
+                </button>
+                <button onClick={() => { setMode('login-client'); setError(''); }}
+                  className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-all">
+                  Já tem conta? Entrar
+                </button>
               </div>
             </motion.div>
           )}
