@@ -126,6 +126,8 @@ const ClientBooking = () => {
       createUser({ email: clientEmail, password: '123456', name: clientName, role: 'client' });
     }
 
+    const barberCommission = selectedBarber.commission_percentage || 50;
+    const barberEarning = Math.round(selectedService.price * barberCommission / 100);
     createAppointment({
       barbershopId: selectedShop.id,
       clientEmail,
@@ -139,6 +141,9 @@ const ClientBooking = () => {
       time: selectedTime,
       duration: selectedService.duration,
       status: 'confirmed',
+      commission_percentage: barberCommission,
+      barber_earning: barberEarning,
+      owner_earning: selectedService.price - barberEarning,
     });
 
     addMessage('user', 'Confirmar ✅');

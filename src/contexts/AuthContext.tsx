@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, getUser } from '@/lib/storage';
+import { User, getUser, initSuperAdmin, refreshPlanStatuses } from '@/lib/storage';
 
 interface AuthContextType {
   user: User | null;
@@ -21,6 +21,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
+    initSuperAdmin();
+    refreshPlanStatuses();
     const stored = localStorage.getItem('currentUser');
     if (stored) {
       setUser(JSON.parse(stored));
