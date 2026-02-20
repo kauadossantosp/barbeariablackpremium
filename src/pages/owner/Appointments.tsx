@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Search, Filter } from 'lucide-react';
+import { Calendar, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAppointments, updateAppointment } from '@/lib/storage';
+import { getAppointments, updateAppointment, getBarberById } from '@/lib/storage';
 
 const statusLabels: Record<string, string> = { confirmed: 'Confirmado', completed: 'Concluído', cancelled: 'Cancelado' };
 const statusColors: Record<string, string> = { confirmed: 'bg-info/10 text-info', completed: 'bg-success/10 text-success', cancelled: 'bg-destructive/10 text-destructive' };
@@ -20,7 +20,20 @@ const OwnerAppointments = () => {
     .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
 
   const handleStatusChange = (id: string, status: 'confirmed' | 'completed' | 'cancelled') => {
-    updateAppointment(id, { status });
+    const updates: any = { status };
+    if (status === 'completed') {
+      // Recalculate commission based on current barber commission
+      const apt = getAppointments(shopId).find(a => a.id === id);
+      if (apt) {
+        const barber = getBarberById(apt.barberId);
+        const commission = barber?.commission_percentage ?? apt.commission_percentage ?? 50;
+        const barberEarning = Math.round(apt.servicePrice * commission / 100);
+        updates.commission_percentage = commission;
+        updates.barber_earning = barberEarning;
+        updates.owner_earning = apt.servicePrice - barberEarning;
+      }
+    }
+    updateAppointment(id, updates);
     setRefresh(r => r + 1);
   };
 
@@ -64,6 +77,11 @@ const OwnerAppointments = () => {
                   <span className={`text-[10px] px-2 py-0.5 rounded-lg ${statusColors[a.status]}`}>{statusLabels[a.status]}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">{a.serviceName} • {a.barberName} • {new Date(a.date + 'T12:00').toLocaleDateString('pt-BR')} às {a.time}</p>
+                {a.status === 'completed' && a.barber_earning != null && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Barbeiro: R$ {a.barber_earning} ({a.commission_percentage}%) • Proprietário: R$ {a.owner_earning}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-sm font-semibold gold-text">R$ {a.servicePrice}</span>

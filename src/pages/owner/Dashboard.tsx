@@ -17,14 +17,17 @@ const Dashboard = () => {
 
     const todayApts = appointments.filter(a => a.date === today && a.status !== 'cancelled');
     const revenueToday = todayApts.reduce((sum, a) => sum + a.servicePrice, 0);
-    
+
     const currentMonth = new Date().getMonth();
     const monthApts = appointments.filter(a => {
       const m = new Date(a.date + 'T12:00').getMonth();
       return m === currentMonth && a.status !== 'cancelled';
     });
+    const monthCompleted = monthApts.filter(a => a.status === 'completed');
     const revenueMonth = monthApts.reduce((sum, a) => sum + a.servicePrice, 0);
     const avgTicket = monthApts.length > 0 ? Math.round(revenueMonth / monthApts.length) : 0;
+    const monthCommission = monthCompleted.reduce((s, a) => s + (a.barber_earning || 0), 0);
+    const monthProfit = monthCompleted.reduce((s, a) => s + a.servicePrice, 0) - monthCommission;
 
     // Service popularity
     const serviceCount: Record<string, number> = {};
@@ -47,10 +50,10 @@ const Dashboard = () => {
     });
 
     // Occupancy rate
-    const totalSlots = barbers.length * 8 * 2; // barbers * 8h * 2 slots/h
+    const totalSlots = barbers.length * 8 * 2;
     const occupancy = totalSlots > 0 ? Math.round((todayApts.length / totalSlots) * 100) : 0;
 
-    return { todayApts: todayApts.length, revenueToday, revenueMonth, avgTicket, topServices, last7Days, occupancy, totalBarbers: barbers.length, totalServices: services.filter(s => s.active).length };
+    return { todayApts: todayApts.length, revenueToday, revenueMonth, avgTicket, monthCommission, monthProfit, topServices, last7Days, occupancy, totalBarbers: barbers.length, totalServices: services.filter(s => s.active).length };
   }, [shopId]);
 
   const stats = [

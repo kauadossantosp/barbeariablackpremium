@@ -82,9 +82,12 @@ const OwnerSettings = () => {
         </div>
 
         <div className="flex items-center gap-3 p-4 rounded-xl bg-secondary/30 border border-border">
-          <div className="flex-1">
+          <div className="flex-1 space-y-1">
             <p className="text-sm font-medium text-foreground">Plano: <span className="capitalize gold-text">{shop?.plan}</span></p>
-            <p className="text-xs text-muted-foreground">ID: {shop?.id}</p>
+            <p className="text-xs text-muted-foreground">Período: {shop?.plan_type === 'quarterly' ? 'Trimestral' : shop?.plan_type === 'semiannual' ? 'Semestral' : 'Mensal'} • R$ {shop?.plan_price || 0}</p>
+            <p className="text-xs text-muted-foreground">Status: <span className={shop?.plan_status === 'active' ? 'text-success' : 'text-destructive'}>{shop?.plan_status === 'active' ? 'Ativo' : 'Expirado'}</span></p>
+            <p className="text-xs text-muted-foreground">Expira: {shop?.plan_end_date ? new Date(shop.plan_end_date + 'T12:00').toLocaleDateString('pt-BR') : 'N/A'}</p>
+            <p className="text-[10px] text-muted-foreground/60">ID: {shop?.id}</p>
           </div>
         </div>
 

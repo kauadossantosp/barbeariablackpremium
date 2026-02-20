@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Trash2, Check, X } from 'lucide-react';
+import { Plus, Trash2, Check, X, Percent } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
 import { useAuth } from '@/contexts/AuthContext';
 import { getBarbers, createBarber, updateBarber, deleteBarber, Barber } from '@/lib/storage';
 
@@ -12,7 +13,7 @@ const Barbers = () => {
   const shopId = user?.barbershopId || '';
   const [refresh, setRefresh] = useState(0);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: '', avatar: '💈', workingDays: [1, 2, 3, 4, 5, 6], startHour: '09:00', endHour: '19:00' });
+  const [form, setForm] = useState({ name: '', avatar: '💈', workingDays: [1, 2, 3, 4, 5, 6], startHour: '09:00', endHour: '19:00', commission: 50 });
 
   const barbers = getBarbers(shopId);
 
@@ -21,8 +22,9 @@ const Barbers = () => {
     createBarber({
       barbershopId: shopId, name: form.name, avatar: form.avatar,
       workingDays: form.workingDays, workingHours: { start: form.startHour, end: form.endHour }, daysOff: [],
+      commission_percentage: form.commission,
     });
-    setForm({ name: '', avatar: '💈', workingDays: [1, 2, 3, 4, 5, 6], startHour: '09:00', endHour: '19:00' });
+    setForm({ name: '', avatar: '💈', workingDays: [1, 2, 3, 4, 5, 6], startHour: '09:00', endHour: '19:00', commission: 50 });
     setAdding(false);
     setRefresh(r => r + 1);
   };
@@ -87,7 +89,11 @@ const Barbers = () => {
               <label className="text-xs text-muted-foreground mb-1 block">Fim</label>
               <input type="time" value={form.endHour} onChange={e => setForm({ ...form, endHour: e.target.value })}
                 className="bg-secondary/50 border border-border rounded-xl px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 w-full" />
-            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-2 block flex items-center gap-1"><Percent className="w-3 h-3" /> Comissão: {form.commission}%</label>
+            <Slider value={[form.commission]} onValueChange={v => setForm({ ...form, commission: v[0] })} min={0} max={100} step={5} className="mt-1" />
+          </div>
           </div>
           <div className="flex gap-2">
             <button onClick={handleAdd} className="gold-gradient text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1"><Check className="w-3 h-3" /> Salvar</button>
@@ -106,6 +112,7 @@ const Barbers = () => {
                 <div>
                   <p className="font-semibold text-foreground">{b.name}</p>
                   <p className="text-xs text-muted-foreground">{b.workingHours.start} - {b.workingHours.end}</p>
+                  <p className="text-xs text-primary">{b.commission_percentage ?? 50}% comissão</p>
                 </div>
               </div>
               <button onClick={() => handleDelete(b.id)} className="p-2 text-muted-foreground hover:text-destructive rounded-lg transition-colors">
