@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Scissors, Crown, User, ArrowLeft, Check, Sparkles, Shield } from 'lucide-react';
+import { Scissors, Crown, User, ArrowLeft, Check, Sparkles } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { createUser, getUser } from '@/lib/storage';
 
-type AuthMode = 'select' | 'login-client' | 'login-owner' | 'register-client' | 'login-admin';
+type AuthMode = 'select' | 'login-client' | 'login-owner' | 'register-client';
 
 const Auth = () => {
   const [mode, setMode] = useState<AuthMode>('select');
@@ -23,7 +23,7 @@ const Auth = () => {
     if (!user) { setError('Usuário não encontrado'); return; }
     if (user.role !== role) { setError(`Esta conta não é de ${role === 'client' ? 'cliente' : role === 'owner' ? 'proprietário' : 'administrador'}`); return; }
     if (login(email, password)) {
-      navigate(role === 'client' ? '/client' : role === 'owner' ? '/owner' : '/admin');
+      navigate(role === 'client' ? '/client' : '/owner');
     } else {
       setError('Senha incorreta');
     }
@@ -43,7 +43,7 @@ const Auth = () => {
     exit: { opacity: 0, y: -20 },
   };
 
-  const renderLoginForm = (role: 'client' | 'owner' | 'super_admin', title: string, subtitle: string) => (
+  const renderLoginForm = (role: 'client' | 'owner', title: string, subtitle: string) => (
     <motion.div key={mode} {...fadeVariant} transition={{ duration: 0.3 }} className="space-y-6">
       <button onClick={() => { setMode('select'); setError(''); }} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
         <ArrowLeft className="w-4 h-4" /> Voltar
@@ -120,22 +120,13 @@ const Auth = () => {
                   </div>
                 </button>
 
-                <button onClick={() => setMode('login-admin')} className="glass-card w-full p-5 flex items-center gap-4 hover:gold-border transition-all group">
-                  <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                    <Shield className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-semibold text-foreground">Administrador</p>
-                    <p className="text-sm text-muted-foreground">Painel de controle da plataforma</p>
-                  </div>
-                </button>
               </div>
             </motion.div>
           )}
 
           {mode === 'login-client' && renderLoginForm('client', 'Entrar como Cliente', 'Acesse sua conta')}
           {mode === 'login-owner' && renderLoginForm('owner', 'Entrar como Proprietário', 'Acesse sua conta')}
-          {mode === 'login-admin' && renderLoginForm('super_admin', 'Administrador', 'Acesso restrito à plataforma')}
+          
 
           {mode === 'register-client' && (
             <motion.div key="register-client" {...fadeVariant} transition={{ duration: 0.3 }} className="space-y-6">
