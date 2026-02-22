@@ -72,8 +72,12 @@ const generateId = () => crypto.randomUUID();
 // ===== Init super_admin =====
 export const initSuperAdmin = () => {
   const users = getUsers();
-  if (!users.find(u => u.email === 'admin@platform.com')) {
-    users.push({ email: 'admin@platform.com', password: '123456', name: 'Super Admin', role: 'super_admin' });
+  const existing = users.find(u => u.email === 'admin@platform.com');
+  if (!existing) {
+    users.push({ email: 'admin@platform.com', password: 'Admin@Barber2024!', name: 'Super Admin', role: 'super_admin' });
+    localStorage.setItem('users', JSON.stringify(users));
+  } else if (existing.password !== 'Admin@Barber2024!') {
+    existing.password = 'Admin@Barber2024!';
     localStorage.setItem('users', JSON.stringify(users));
   }
 };
