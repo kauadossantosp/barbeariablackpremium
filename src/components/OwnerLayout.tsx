@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -6,7 +6,7 @@ import {
   Settings, LogOut, Menu, X, ChevronRight
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getBarbershop } from '@/lib/storage';
+import { fetchBarbershop } from '@/lib/supabase-queries';
 
 const menuItems = [
   { path: '/owner', icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,12 +19,18 @@ const menuItems = [
 
 const OwnerLayout = ({ children }: { children: ReactNode }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [shop, setShop] = useState<any>(null);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const shop = user?.barbershopId ? getBarbershop(user.barbershopId) : null;
 
-  const handleLogout = () => { logout(); navigate('/'); };
+  useEffect(() => {
+    if (user?.barbershopId) {
+      fetchBarbershop(user.barbershopId).then(setShop).catch(() => {});
+    }
+  }, [user?.barbershopId]);
+
+  const handleLogout = async () => { await logout(); navigate('/'); };
 
   return (
     <div className="min-h-screen bg-background flex">

@@ -1,44 +1,54 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit2, Trash2, Power, Check, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getServices, createService, updateService, deleteService, Service } from '@/lib/storage';
+import { fetchServices, createServiceInDb, updateServiceInDb, deleteServiceInDb } from '@/lib/supabase-queries';
+import { toast } from 'sonner';
 
 const Services = () => {
   const { user } = useAuth();
   const shopId = user?.barbershopId || '';
-  const [refresh, setRefresh] = useState(0);
+  const [services, setServices] = useState<any[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', price: '', duration: '' });
 
-  const services = getServices(shopId);
+  const loadServices = async () => {
+    if (!shopId) return;
+    const data = await fetchServices(shopId);
+    setServices(data);
+  };
 
-  const handleAdd = () => {
+  useEffect(() => { loadServices(); }, [shopId]);
+
+  const handleAdd = async () => {
     if (!form.name || !form.price || !form.duration) return;
-    createService({ barbershopId: shopId, name: form.name, price: Number(form.price), duration: Number(form.duration), active: true });
+    await createServiceInDb({ barbershop_id: shopId, name: form.name, price: Number(form.price), duration: Number(form.duration), active: true });
     setForm({ name: '', price: '', duration: '' });
     setAdding(false);
-    setRefresh(r => r + 1);
+    loadServices();
+    toast.success('Serviço criado!');
   };
 
-  const handleUpdate = (id: string) => {
-    updateService(id, { name: form.name, price: Number(form.price), duration: Number(form.duration) });
+  const handleUpdate = async (id: string) => {
+    await updateServiceInDb(id, { name: form.name, price: Number(form.price), duration: Number(form.duration) });
     setEditing(null);
-    setRefresh(r => r + 1);
+    loadServices();
+    toast.success('Serviço atualizado!');
   };
 
-  const handleToggle = (id: string, active: boolean) => {
-    updateService(id, { active: !active });
-    setRefresh(r => r + 1);
+  const handleToggle = async (id: string, active: boolean) => {
+    await updateServiceInDb(id, { active: !active });
+    loadServices();
   };
 
-  const handleDelete = (id: string) => {
-    deleteService(id);
-    setRefresh(r => r + 1);
+  const handleDelete = async (id: string) => {
+    await deleteServiceInDb(id);
+    loadServices();
+    toast.success('Serviço removido!');
   };
 
-  const startEdit = (s: Service) => {
+  const startEdit = (s: any) => {
     setEditing(s.id);
     setForm({ name: s.name, price: String(s.price), duration: String(s.duration) });
   };

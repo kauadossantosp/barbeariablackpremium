@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAppointments, updateAppointment, getBarberById } from '@/lib/storage';
+import { fetchAppointments, updateAppointmentInDb, fetchBarbers } from '@/lib/supabase-queries';
+import { toast } from 'sonner';
 
 const statusLabels: Record<string, string> = { confirmed: 'Confirmado', completed: 'Concluído', cancelled: 'Cancelado' };
 const statusColors: Record<string, string> = { confirmed: 'bg-info/10 text-info', completed: 'bg-success/10 text-success', cancelled: 'bg-destructive/10 text-destructive' };
@@ -12,30 +13,42 @@ const OwnerAppointments = () => {
   const shopId = user?.barbershopId || '';
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
-  const [refresh, setRefresh] = useState(0);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [barbers, setBarbers] = useState<any[]>([]);
 
-  const appointments = getAppointments(shopId)
+  const loadData = async () => {
+    if (!shopId) return;
+    const [apts, brbs] = await Promise.all([fetchAppointments(shopId), fetchBarbers(shopId)]);
+    setAppointments(apts);
+    setBarbers(brbs);
+  };
+
+  useEffect(() => { loadData(); }, [shopId]);
+
+  const filtered = appointments
     .filter(a => filter === 'all' || a.status === filter)
-    .filter(a => !search || a.clientName.toLowerCase().includes(search.toLowerCase()) || a.serviceName.toLowerCase().includes(search.toLowerCase()))
+    .filter(a => !search || (a.client_name || '').toLowerCase().includes(search.toLowerCase()) || (a.service_name || '').toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
 
-  const handleStatusChange = (id: string, status: 'confirmed' | 'completed' | 'cancelled') => {
+  const handleStatusChange = async (id: string, status: string) => {
     const updates: any = { status };
     if (status === 'completed') {
-      // Recalculate commission based on current barber commission
-      const apt = getAppointments(shopId).find(a => a.id === id);
+      const apt = appointments.find(a => a.id === id);
       if (apt) {
-        const barber = getBarberById(apt.barberId);
+        const barber = barbers.find(b => b.id === apt.barber_id);
         const commission = barber?.commission_percentage ?? apt.commission_percentage ?? 50;
-        const barberEarning = Math.round(apt.servicePrice * commission / 100);
+        const barberEarning = Math.round(Number(apt.service_price) * commission / 100);
         updates.commission_percentage = commission;
         updates.barber_earning = barberEarning;
-        updates.owner_earning = apt.servicePrice - barberEarning;
+        updates.owner_earning = Number(apt.service_price) - barberEarning;
       }
     }
-    updateAppointment(id, updates);
-    setRefresh(r => r + 1);
+    await updateAppointmentInDb(id, updates);
+    loadData();
+    toast.success(status === 'completed' ? 'Concluído!' : 'Cancelado!');
   };
+
+  const getBarberName = (barberId: string) => barbers.find(b => b.id === barberId)?.name || 'Barbeiro';
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -61,22 +74,22 @@ const OwnerAppointments = () => {
       </div>
 
       <div className="space-y-2">
-        {appointments.length === 0 && (
+        {filtered.length === 0 && (
           <div className="glass-card p-8 text-center">
             <Calendar className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">Nenhum agendamento encontrado</p>
           </div>
         )}
-        {appointments.map((a, i) => (
+        {filtered.map((a, i) => (
           <motion.div key={a.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.03 }} className="glass-card p-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="font-medium text-foreground text-sm">{a.clientName}</p>
+                  <p className="font-medium text-foreground text-sm">{a.client_name || 'Cliente'}</p>
                   <span className={`text-[10px] px-2 py-0.5 rounded-lg ${statusColors[a.status]}`}>{statusLabels[a.status]}</span>
                 </div>
-                <p className="text-xs text-muted-foreground">{a.serviceName} • {a.barberName} • {new Date(a.date + 'T12:00').toLocaleDateString('pt-BR')} às {a.time}</p>
+                <p className="text-xs text-muted-foreground">{a.service_name} • {getBarberName(a.barber_id)} • {new Date(a.date + 'T12:00').toLocaleDateString('pt-BR')} às {a.time}</p>
                 {a.status === 'completed' && a.barber_earning != null && (
                   <p className="text-[10px] text-muted-foreground mt-0.5">
                     Barbeiro: R$ {a.barber_earning} ({a.commission_percentage}%) • Proprietário: R$ {a.owner_earning}
@@ -84,7 +97,7 @@ const OwnerAppointments = () => {
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-sm font-semibold gold-text">R$ {a.servicePrice}</span>
+                <span className="text-sm font-semibold gold-text">R$ {a.service_price}</span>
                 {a.status === 'confirmed' && (
                   <div className="flex gap-1">
                     <button onClick={() => handleStatusChange(a.id, 'completed')}

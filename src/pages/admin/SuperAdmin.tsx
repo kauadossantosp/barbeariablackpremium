@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -6,57 +6,114 @@ import {
   Calendar, DollarSign, Check, X, AlertTriangle 
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  getBarbershops, createBarbershop, deleteBarbershop, createUser, getUser,
-  renewPlan, refreshPlanStatuses, Barbershop 
-} from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { fetchBarbershops, createBarbershopInDb, deleteBarbershopInDb, updateBarbershopInDb, calculatePlanDates, assignOwnerRole } from '@/lib/supabase-queries';
 import { toast } from 'sonner';
 
 const planLabels: Record<string, string> = { monthly: 'Mensal', quarterly: 'Trimestral', semiannual: 'Semestral' };
-const planPrices: Record<string, string> = { monthly: 'R$ 67', quarterly: 'R$ 177', semiannual: 'R$ 327' };
+const planPricesMap: Record<string, string> = { monthly: 'R$ 67', quarterly: 'R$ 177', semiannual: 'R$ 327' };
 
 const SuperAdmin = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const [refresh, setRefresh] = useState(0);
+  const [shops, setShops] = useState<any[]>([]);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ shopName: '', ownerName: '', email: '', password: '', plan: 'pro' as 'starter' | 'pro' | 'premium', planType: 'monthly' as 'monthly' | 'quarterly' | 'semiannual' });
+  const [isCreating, setIsCreating] = useState(false);
+  const [form, setForm] = useState({ shopName: '', ownerName: '', email: '', password: '', plan: 'pro', planType: 'monthly' });
 
-  refreshPlanStatuses();
-  const shops = getBarbershops();
+  const loadShops = async () => {
+    const data = await fetchBarbershops();
+    setShops(data);
+  };
 
-  const handleCreate = () => {
+  useEffect(() => { loadShops(); }, []);
+
+  const handleCreate = async () => {
     if (!form.shopName || !form.email || !form.password || !form.ownerName) {
       toast.error('Preencha todos os campos');
       return;
     }
-    if (getUser(form.email)) {
-      toast.error('Email já cadastrado');
+    if (form.password.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres');
       return;
     }
-    const shop = createBarbershop({ name: form.shopName, email: form.email, password: form.password, plan: form.plan, plan_type: form.planType });
-    createUser({ email: form.email, password: form.password, name: form.ownerName, role: 'owner', barbershopId: shop.id });
-    setForm({ shopName: '', ownerName: '', email: '', password: '', plan: 'pro', planType: 'monthly' });
-    setAdding(false);
-    setRefresh(r => r + 1);
-    toast.success('Barbearia criada com sucesso!');
+
+    setIsCreating(true);
+    try {
+      // 1. Create auth user via admin (we'll use signUp and then the trigger creates profile)
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: { data: { name: form.ownerName } },
+      });
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Erro ao criar usuário');
+
+      // 2. Create barbershop
+      const { start, end, price } = calculatePlanDates(form.planType);
+      const shop = await createBarbershopInDb({
+        name: form.shopName,
+        owner_id: authData.user.id,
+        plan: form.plan,
+        plan_type: form.planType,
+        plan_price: price,
+        plan_start_date: start,
+        plan_end_date: end,
+      });
+
+      // 3. Assign owner role
+      await assignOwnerRole(authData.user.id, shop.id);
+
+      // 4. Create default services
+      const defaultServices = [
+        { barbershop_id: shop.id, name: 'Corte Tradicional', price: 45, duration: 30 },
+        { barbershop_id: shop.id, name: 'Corte + Barba', price: 65, duration: 45 },
+        { barbershop_id: shop.id, name: 'Corte + Sobrancelha', price: 55, duration: 35 },
+        { barbershop_id: shop.id, name: 'Barba Modelada', price: 35, duration: 25 },
+      ];
+      await supabase.from('services').insert(defaultServices);
+
+      // 5. Create default barbers
+      const defaultBarbers = [
+        { barbershop_id: shop.id, name: 'Carlos Silva', avatar: '💈', commission_percentage: 50 },
+        { barbershop_id: shop.id, name: 'Rafael Santos', avatar: '✂️', commission_percentage: 50 },
+      ];
+      await supabase.from('barbers').insert(defaultBarbers);
+
+      setForm({ shopName: '', ownerName: '', email: '', password: '', plan: 'pro', planType: 'monthly' });
+      setAdding(false);
+      loadShops();
+      toast.success('Barbearia criada com sucesso!');
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao criar barbearia');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (confirm(`Excluir "${name}" e todos os dados associados?`)) {
-      deleteBarbershop(id);
-      setRefresh(r => r + 1);
+      await deleteBarbershopInDb(id);
+      loadShops();
       toast.success('Barbearia excluída');
     }
   };
 
-  const handleRenew = (id: string, planType: 'monthly' | 'quarterly' | 'semiannual') => {
-    renewPlan(id, planType);
-    setRefresh(r => r + 1);
+  const handleRenew = async (id: string, planType: string) => {
+    const { start, end, price } = calculatePlanDates(planType);
+    await updateBarbershopInDb(id, {
+      plan_type: planType,
+      plan_price: price,
+      plan_start_date: start,
+      plan_end_date: end,
+      plan_status: 'active',
+      payment_status: 'approved',
+    });
+    loadShops();
     toast.success('Plano renovado!');
   };
 
-  const handleLogout = () => { logout(); navigate('/'); };
+  const handleLogout = async () => { await logout(); navigate('/'); };
 
   return (
     <div className="min-h-screen bg-background">
@@ -78,7 +135,6 @@ const SuperAdmin = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="stat-card">
             <Store className="w-5 h-5 text-primary mb-2" />
@@ -97,12 +153,11 @@ const SuperAdmin = () => {
           </div>
           <div className="stat-card">
             <DollarSign className="w-5 h-5 text-info mb-2" />
-            <p className="text-2xl font-bold text-info">R$ {shops.filter(s => s.plan_status === 'active').reduce((s, sh) => s + (sh.plan_price || 0), 0)}</p>
+            <p className="text-2xl font-bold text-info">R$ {shops.filter(s => s.plan_status === 'active').reduce((s, sh) => s + Number(sh.plan_price || 0), 0)}</p>
             <p className="text-xs text-muted-foreground">MRR</p>
           </div>
         </div>
 
-        {/* Add button */}
         <div className="flex justify-between items-center">
           <h2 className="font-serif text-2xl font-bold text-foreground">Barbearias</h2>
           <button onClick={() => setAdding(true)}
@@ -111,7 +166,6 @@ const SuperAdmin = () => {
           </button>
         </div>
 
-        {/* Add form */}
         {adding && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5 gold-border space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -121,13 +175,13 @@ const SuperAdmin = () => {
                 className="bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
               <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email do proprietário"
                 className="bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Senha"
+              <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Senha (min 6 caracteres)"
                 className="bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Plano</label>
-                <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value as any })}
+                <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })}
                   className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
                   <option value="starter">Starter</option>
                   <option value="pro">Pro</option>
@@ -136,7 +190,7 @@ const SuperAdmin = () => {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Período</label>
-                <select value={form.planType} onChange={e => setForm({ ...form, planType: e.target.value as any })}
+                <select value={form.planType} onChange={e => setForm({ ...form, planType: e.target.value })}
                   className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
                   <option value="monthly">Mensal – R$ 67</option>
                   <option value="quarterly">Trimestral – R$ 177</option>
@@ -145,13 +199,14 @@ const SuperAdmin = () => {
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={handleCreate} className="gold-gradient text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1"><Check className="w-3 h-3" /> Criar</button>
+              <button onClick={handleCreate} disabled={isCreating} className="gold-gradient text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-1 disabled:opacity-50">
+                <Check className="w-3 h-3" /> {isCreating ? 'Criando...' : 'Criar'}
+              </button>
               <button onClick={() => setAdding(false)} className="border border-border text-muted-foreground px-4 py-2 rounded-xl text-sm flex items-center gap-1"><X className="w-3 h-3" /> Cancelar</button>
             </div>
           </motion.div>
         )}
 
-        {/* Shops list */}
         <div className="space-y-3">
           {shops.map((shop, i) => (
             <motion.div key={shop.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -166,14 +221,14 @@ const SuperAdmin = () => {
                     <span className="text-[10px] px-2 py-0.5 rounded-lg bg-primary/10 text-primary capitalize">{shop.plan}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {shop.email} • {planLabels[shop.plan_type] || 'Mensal'} ({planPrices[shop.plan_type] || 'R$ 67'})
+                    {planLabels[shop.plan_type] || 'Mensal'} ({planPricesMap[shop.plan_type] || 'R$ 67'})
                     • Expira: {shop.plan_end_date ? new Date(shop.plan_end_date + 'T12:00').toLocaleDateString('pt-BR') : 'N/A'}
                   </p>
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">ID: {shop.id}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {shop.plan_status === 'expired' && (
-                    <select onChange={e => { if (e.target.value) handleRenew(shop.id, e.target.value as any); e.target.value = ''; }}
+                    <select onChange={e => { if (e.target.value) handleRenew(shop.id, e.target.value); e.target.value = ''; }}
                       className="bg-secondary/50 border border-border rounded-lg px-2 py-1.5 text-xs text-foreground">
                       <option value="">Renovar...</option>
                       <option value="monthly">Mensal – R$ 67</option>

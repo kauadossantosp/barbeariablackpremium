@@ -1,76 +1,64 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { DollarSign, TrendingUp, ArrowUpRight, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAppointments, getBarbers } from '@/lib/storage';
+import { fetchAppointments, fetchBarbers } from '@/lib/supabase-queries';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 const Financial = () => {
   const { user } = useAuth();
   const shopId = user?.barbershopId || '';
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [barbers, setBarbers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!shopId) return;
+    Promise.all([fetchAppointments(shopId), fetchBarbers(shopId)]).then(([a, b]) => { setAppointments(a); setBarbers(b); });
+  }, [shopId]);
 
   const data = useMemo(() => {
-    const appointments = getAppointments(shopId).filter(a => a.status !== 'cancelled');
-    const completed = appointments.filter(a => a.status === 'completed');
-    const barbers = getBarbers(shopId);
+    const allApts = appointments.filter(a => a.status !== 'cancelled');
+    const completed = allApts.filter(a => a.status === 'completed');
     const today = new Date();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
 
-    // Daily revenue for current month
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const dailyRevenue = Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dayApts = completed.filter(a => a.date === dateStr);
-      const revenue = dayApts.reduce((s, a) => s + a.servicePrice, 0);
-      const commission = dayApts.reduce((s, a) => s + (a.barber_earning || 0), 0);
+      const revenue = dayApts.reduce((s, a) => s + Number(a.service_price), 0);
+      const commission = dayApts.reduce((s, a) => s + Number(a.barber_earning || 0), 0);
       return { day: String(day), revenue, commission, profit: revenue - commission };
     });
 
-    // Monthly totals
-    const monthlyData: { month: string; revenue: number; commission: number; profit: number }[] = [];
+    const monthlyData = [];
     for (let m = 0; m < 12; m++) {
-      const monthApts = completed.filter(a => {
-        const d = new Date(a.date + 'T12:00');
-        return d.getMonth() === m && d.getFullYear() === currentYear;
-      });
-      const rev = monthApts.reduce((s, a) => s + a.servicePrice, 0);
-      const com = monthApts.reduce((s, a) => s + (a.barber_earning || 0), 0);
-      monthlyData.push({
-        month: new Date(currentYear, m).toLocaleDateString('pt-BR', { month: 'short' }),
-        revenue: rev, commission: com, profit: rev - com,
-      });
+      const monthApts = completed.filter(a => { const d = new Date(a.date + 'T12:00'); return d.getMonth() === m && d.getFullYear() === currentYear; });
+      const rev = monthApts.reduce((s, a) => s + Number(a.service_price), 0);
+      const com = monthApts.reduce((s, a) => s + Number(a.barber_earning || 0), 0);
+      monthlyData.push({ month: new Date(currentYear, m).toLocaleDateString('pt-BR', { month: 'short' }), revenue: rev, commission: com, profit: rev - com });
     }
 
-    // Current month stats
-    const monthCompleted = completed.filter(a => {
-      const d = new Date(a.date + 'T12:00');
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    });
-    const monthRevenue = monthCompleted.reduce((s, a) => s + a.servicePrice, 0);
-    const monthCommission = monthCompleted.reduce((s, a) => s + (a.barber_earning || 0), 0);
+    const monthCompleted = completed.filter(a => { const d = new Date(a.date + 'T12:00'); return d.getMonth() === currentMonth && d.getFullYear() === currentYear; });
+    const monthRevenue = monthCompleted.reduce((s, a) => s + Number(a.service_price), 0);
+    const monthCommission = monthCompleted.reduce((s, a) => s + Number(a.barber_earning || 0), 0);
     const monthProfit = monthRevenue - monthCommission;
 
     const todayStr = today.toISOString().split('T')[0];
     const todayCompleted = completed.filter(a => a.date === todayStr);
-    const todayRevenue = todayCompleted.reduce((s, a) => s + a.servicePrice, 0);
+    const todayRevenue = todayCompleted.reduce((s, a) => s + Number(a.service_price), 0);
 
-    const totalApts = appointments.filter(a => {
-      const d = new Date(a.date + 'T12:00');
-      return d.getMonth() === currentMonth;
-    }).length;
-
-    // Barber ranking
     const barberRevenue = barbers.map(b => {
-      const bApts = monthCompleted.filter(a => a.barberId === b.id);
-      const total = bApts.reduce((s, a) => s + a.servicePrice, 0);
-      const earning = bApts.reduce((s, a) => s + (a.barber_earning || 0), 0);
+      const bApts = monthCompleted.filter(a => a.barber_id === b.id);
+      const total = bApts.reduce((s, a) => s + Number(a.service_price), 0);
+      const earning = bApts.reduce((s, a) => s + Number(a.barber_earning || 0), 0);
       return { name: b.name.length > 12 ? b.name.slice(0, 12) + '…' : b.name, total, earning, count: bApts.length };
     }).sort((a, b) => b.total - a.total);
 
-    return { dailyRevenue, monthlyData, monthRevenue, monthCommission, monthProfit, todayRevenue, totalApts, barberRevenue };
-  }, [shopId]);
+    return { dailyRevenue, monthlyData, monthRevenue, monthCommission, monthProfit, todayRevenue, barberRevenue };
+  }, [appointments, barbers]);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

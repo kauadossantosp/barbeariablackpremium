@@ -8,7 +8,7 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => { logout(); navigate('/'); };
+  const handleLogout = async () => { await logout(); navigate('/'); };
 
   const tabs = [
     { path: '/client', icon: MessageSquare, label: 'Agendar' },
@@ -17,7 +17,6 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg gold-gradient flex items-center justify-center">

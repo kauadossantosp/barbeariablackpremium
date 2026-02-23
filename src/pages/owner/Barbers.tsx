@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Trash2, Check, X, Percent } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { useAuth } from '@/contexts/AuthContext';
-import { getBarbers, createBarber, updateBarber, deleteBarber, Barber } from '@/lib/storage';
+import { fetchBarbers, createBarberInDb, deleteBarberInDb } from '@/lib/supabase-queries';
+import { toast } from 'sonner';
 
 const avatars = ['💈', '✂️', '🪒', '👨‍🦱', '🧔', '💇‍♂️'];
 const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -11,27 +12,35 @@ const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const Barbers = () => {
   const { user } = useAuth();
   const shopId = user?.barbershopId || '';
-  const [refresh, setRefresh] = useState(0);
+  const [barbers, setBarbers] = useState<any[]>([]);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', avatar: '💈', workingDays: [1, 2, 3, 4, 5, 6], startHour: '09:00', endHour: '19:00', commission: 50 });
 
-  const barbers = getBarbers(shopId);
+  const loadBarbers = async () => {
+    if (!shopId) return;
+    const data = await fetchBarbers(shopId);
+    setBarbers(data);
+  };
 
-  const handleAdd = () => {
+  useEffect(() => { loadBarbers(); }, [shopId]);
+
+  const handleAdd = async () => {
     if (!form.name) return;
-    createBarber({
-      barbershopId: shopId, name: form.name, avatar: form.avatar,
-      workingDays: form.workingDays, workingHours: { start: form.startHour, end: form.endHour }, daysOff: [],
-      commission_percentage: form.commission,
+    await createBarberInDb({
+      barbershop_id: shopId, name: form.name, avatar: form.avatar,
+      working_days: form.workingDays, working_hours_start: form.startHour, working_hours_end: form.endHour,
+      days_off: [], commission_percentage: form.commission,
     });
     setForm({ name: '', avatar: '💈', workingDays: [1, 2, 3, 4, 5, 6], startHour: '09:00', endHour: '19:00', commission: 50 });
     setAdding(false);
-    setRefresh(r => r + 1);
+    loadBarbers();
+    toast.success('Barbeiro adicionado!');
   };
 
-  const handleDelete = (id: string) => {
-    deleteBarber(id);
-    setRefresh(r => r + 1);
+  const handleDelete = async (id: string) => {
+    await deleteBarberInDb(id);
+    loadBarbers();
+    toast.success('Barbeiro removido!');
   };
 
   const toggleDay = (day: number) => {
@@ -111,7 +120,7 @@ const Barbers = () => {
                 <span className="text-3xl">{b.avatar}</span>
                 <div>
                   <p className="font-semibold text-foreground">{b.name}</p>
-                  <p className="text-xs text-muted-foreground">{b.workingHours.start} - {b.workingHours.end}</p>
+                  <p className="text-xs text-muted-foreground">{b.working_hours_start} - {b.working_hours_end}</p>
                   <p className="text-xs text-primary">{b.commission_percentage ?? 50}% comissão</p>
                 </div>
               </div>
@@ -121,7 +130,7 @@ const Barbers = () => {
             </div>
             <div className="flex gap-1 mt-3">
               {dayNames.map((name, idx) => (
-                <span key={idx} className={`text-[10px] px-1.5 py-1 rounded-md ${b.workingDays.includes(idx) ? 'bg-primary/15 text-primary' : 'bg-secondary/30 text-muted-foreground'}`}>
+                <span key={idx} className={`text-[10px] px-1.5 py-1 rounded-md ${(b.working_days || []).includes(idx) ? 'bg-primary/15 text-primary' : 'bg-secondary/30 text-muted-foreground'}`}>
                   {name}
                 </span>
               ))}
