@@ -3,25 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Shield, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUser } from '@/lib/storage';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setError('');
     if (!email || !password) { setError('Preencha todos os campos'); return; }
-    const user = getUser(email);
-    if (!user || user.role !== 'super_admin') { setError('Acesso não autorizado'); return; }
-    if (login(email, password)) {
-      navigate('/admin');
-    } else {
+    setIsLoading(true);
+    const result = await login(email, password);
+    setIsLoading(false);
+    if (!result.success) {
       setError('Credenciais inválidas');
     }
+    // Navigation handled by App.tsx after auth state changes
   };
 
   return (
@@ -58,9 +58,9 @@ const AdminLogin = () => {
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
                 className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
             </div>
-            <button onClick={handleLogin}
-              className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all">
-              Entrar
+            <button onClick={handleLogin} disabled={isLoading}
+              className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all disabled:opacity-50">
+              {isLoading ? 'Entrando...' : 'Entrar'}
             </button>
           </div>
         </motion.div>

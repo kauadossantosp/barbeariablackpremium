@@ -2,23 +2,23 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Calendar, Clock, User, Mail, Scissors, MapPin, ChevronRight, PartyPopper } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  getBarbershops, getServices, getBarbers, getAvailableSlots,
-  createAppointment, createUser, getUser, Barbershop, Service, Barber 
-} from '@/lib/storage';
+import { fetchBarbershops, fetchServices, fetchBarbers, getAvailableSlotsFromDb, createAppointmentInDb } from '@/lib/supabase-queries';
+import { toast } from 'sonner';
 
-type Step = 'shop' | 'service' | 'barber' | 'date' | 'time' | 'email' | 'summary' | 'done';
+type Step = 'shop' | 'service' | 'barber' | 'date' | 'time' | 'summary' | 'done';
 
 const ClientBooking = () => {
   const { user } = useAuth();
   const [step, setStep] = useState<Step>('shop');
-  const [selectedShop, setSelectedShop] = useState<Barbershop | null>(null);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
+  const [shops, setShops] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [barbers, setBarbers] = useState<any[]>([]);
+  const [selectedShop, setSelectedShop] = useState<any>(null);
+  const [selectedService, setSelectedService] = useState<any>(null);
+  const [selectedBarber, setSelectedBarber] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
-  const [clientEmail, setClientEmail] = useState(user?.email || '');
-  const [clientName, setClientName] = useState(user?.name || '');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [messages, setMessages] = useState<Array<{ type: 'bot' | 'user'; text: string }>>([
     { type: 'bot', text: 'Olá! 👋 Bem-vindo ao BarberPro. Vamos agendar seu serviço. Escolha uma barbearia:' }
   ]);
@@ -28,13 +28,13 @@ const ClientBooking = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    fetchBarbershops().then(setShops);
+  }, []);
+
   const addMessage = (type: 'bot' | 'user', text: string) => {
     setMessages(prev => [...prev, { type, text }]);
   };
-
-  const shops = getBarbershops();
-  const services = selectedShop ? getServices(selectedShop.id).filter(s => s.active) : [];
-  const barbers = selectedShop ? getBarbers(selectedShop.id) : [];
 
   const getNext7Days = () => {
     const days: { date: string; label: string; dayOfWeek: number }[] = [];
@@ -43,8 +43,8 @@ const ClientBooking = () => {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
       const dayOfWeek = d.getDay();
-      if (dayOfWeek === 0) continue; // Sunday blocked
-      if (selectedShop && !selectedShop.workingDays.includes(dayOfWeek)) continue;
+      if (dayOfWeek === 0) continue;
+      if (selectedShop && !(selectedShop.working_days || []).includes(dayOfWeek)) continue;
       const iso = d.toISOString().split('T')[0];
       const label = d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
       days.push({ date: iso, label, dayOfWeek });
@@ -53,20 +53,20 @@ const ClientBooking = () => {
     return days;
   };
 
-  const availableSlots = selectedShop && selectedBarber && selectedDate && selectedService
-    ? getAvailableSlots(selectedShop.id, selectedBarber.id, selectedDate, selectedService.duration)
-    : [];
-
-  const handleSelectShop = (shop: Barbershop) => {
+  const handleSelectShop = async (shop: any) => {
     setSelectedShop(shop);
     addMessage('user', shop.name);
+    const svcs = await fetchServices(shop.id);
+    setServices(svcs.filter((s: any) => s.active));
+    const brbs = await fetchBarbers(shop.id);
+    setBarbers(brbs);
     setTimeout(() => {
       addMessage('bot', `Ótima escolha! 🏪 ${shop.name}. Agora escolha o serviço desejado:`);
       setStep('service');
     }, 300);
   };
 
-  const handleSelectService = (service: Service) => {
+  const handleSelectService = (service: any) => {
     setSelectedService(service);
     addMessage('user', `${service.name} - R$ ${service.price}`);
     setTimeout(() => {
@@ -75,7 +75,7 @@ const ClientBooking = () => {
     }, 300);
   };
 
-  const handleSelectBarber = (barber: Barber) => {
+  const handleSelectBarber = (barber: any) => {
     setSelectedBarber(barber);
     addMessage('user', barber.name);
     setTimeout(() => {
@@ -84,9 +84,16 @@ const ClientBooking = () => {
     }, 300);
   };
 
-  const handleSelectDate = (date: string, label: string) => {
+  const handleSelectDate = async (date: string, label: string) => {
     setSelectedDate(date);
     addMessage('user', label);
+    if (selectedShop && selectedBarber && selectedService) {
+      const slots = await getAvailableSlotsFromDb(
+        selectedShop.id, selectedBarber.id, date, selectedService.duration,
+        selectedBarber.working_hours_start || '09:00', selectedBarber.working_hours_end || '19:00'
+      );
+      setAvailableSlots(slots);
+    }
     setTimeout(() => {
       addMessage('bot', '⏰ Escolha o horário disponível:');
       setStep('time');
@@ -97,57 +104,36 @@ const ClientBooking = () => {
     setSelectedTime(time);
     addMessage('user', time);
     setTimeout(() => {
-      if (user?.email) {
-        setClientEmail(user.email);
-        setClientName(user.name);
-        addMessage('bot', '📋 Confira o resumo do seu agendamento:');
-        setStep('summary');
-      } else {
-        addMessage('bot', '📧 Para confirmar, insira seu nome e email:');
-        setStep('email');
-      }
-    }, 300);
-  };
-
-  const handleEmailSubmit = () => {
-    if (!clientEmail || !clientName) return;
-    addMessage('user', `${clientName} - ${clientEmail}`);
-    setTimeout(() => {
       addMessage('bot', '📋 Confira o resumo do seu agendamento:');
       setStep('summary');
     }, 300);
   };
 
-  const handleConfirm = () => {
-    if (!selectedShop || !selectedService || !selectedBarber) return;
-    
-    // Create client user if not exists
-    if (!getUser(clientEmail)) {
-      createUser({ email: clientEmail, password: '123456', name: clientName, role: 'client' });
-    }
+  const handleConfirm = async () => {
+    if (!selectedShop || !selectedService || !selectedBarber || !user) return;
 
     const barberCommission = selectedBarber.commission_percentage || 50;
-    const barberEarning = Math.round(selectedService.price * barberCommission / 100);
-    createAppointment({
-      barbershopId: selectedShop.id,
-      clientEmail,
-      clientName,
-      barberId: selectedBarber.id,
-      barberName: selectedBarber.name,
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      servicePrice: selectedService.price,
+    const barberEarning = Math.round(Number(selectedService.price) * barberCommission / 100);
+
+    await createAppointmentInDb({
+      barbershop_id: selectedShop.id,
+      client_id: user.id,
+      client_name: user.name,
+      barber_id: selectedBarber.id,
+      service_id: selectedService.id,
+      service_name: selectedService.name,
+      service_price: Number(selectedService.price),
       date: selectedDate,
       time: selectedTime,
       duration: selectedService.duration,
-      status: 'confirmed',
       commission_percentage: barberCommission,
       barber_earning: barberEarning,
-      owner_earning: selectedService.price - barberEarning,
+      owner_earning: Number(selectedService.price) - barberEarning,
     });
 
     addMessage('user', 'Confirmar ✅');
     setStep('done');
+    toast.success('Agendamento confirmado!');
   };
 
   const resetBooking = () => {
@@ -157,12 +143,12 @@ const ClientBooking = () => {
     setSelectedBarber(null);
     setSelectedDate('');
     setSelectedTime('');
+    setAvailableSlots([]);
     setMessages([{ type: 'bot', text: 'Olá! 👋 Vamos agendar novamente. Escolha uma barbearia:' }]);
   };
 
   return (
     <div className="max-w-2xl mx-auto h-[calc(100vh-64px)] flex flex-col">
-      {/* Messages */}
       <div className="flex-1 overflow-auto p-4 space-y-4 scrollbar-hide">
         <AnimatePresence>
           {messages.map((msg, i) => (
@@ -175,7 +161,6 @@ const ClientBooking = () => {
           ))}
         </AnimatePresence>
 
-        {/* Options */}
         <AnimatePresence mode="wait">
           {step === 'shop' && shops.length > 0 && (
             <motion.div key="shop" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
@@ -194,7 +179,7 @@ const ClientBooking = () => {
 
           {step === 'shop' && shops.length === 0 && (
             <motion.div key="no-shops" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="chatbot-bubble">
-              <p className="text-sm text-muted-foreground">Nenhuma barbearia cadastrada ainda. Crie uma barbearia primeiro!</p>
+              <p className="text-sm text-muted-foreground">Nenhuma barbearia cadastrada ainda.</p>
             </motion.div>
           )}
 
@@ -248,18 +233,6 @@ const ClientBooking = () => {
             </motion.div>
           )}
 
-          {step === 'email' && (
-            <motion.div key="email" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-4 space-y-3">
-              <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Seu nome"
-                className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              <input type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} placeholder="seu@email.com"
-                className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              <button onClick={handleEmailSubmit} className="w-full gold-gradient text-primary-foreground font-medium py-3 rounded-xl text-sm hover:opacity-90 transition-all">
-                Continuar
-              </button>
-            </motion.div>
-          )}
-
           {step === 'summary' && selectedService && selectedBarber && (
             <motion.div key="summary" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5 space-y-4 gold-border">
               <h3 className="font-serif font-semibold text-foreground text-lg">Resumo</h3>
@@ -269,7 +242,7 @@ const ClientBooking = () => {
                 <div className="flex items-center gap-3"><User className="w-4 h-4 text-primary" /><span className="text-sm text-foreground">{selectedBarber.name}</span></div>
                 <div className="flex items-center gap-3"><Calendar className="w-4 h-4 text-primary" /><span className="text-sm text-foreground">{new Date(selectedDate + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
                 <div className="flex items-center gap-3"><Clock className="w-4 h-4 text-primary" /><span className="text-sm text-foreground">{selectedTime} ({selectedService.duration}min)</span></div>
-                <div className="flex items-center gap-3"><Mail className="w-4 h-4 text-primary" /><span className="text-sm text-foreground">{clientEmail}</span></div>
+                <div className="flex items-center gap-3"><Mail className="w-4 h-4 text-primary" /><span className="text-sm text-foreground">{user?.email}</span></div>
               </div>
               <div className="pt-3 border-t border-border flex items-center justify-between">
                 <span className="text-muted-foreground text-sm">Total</span>
@@ -287,7 +260,7 @@ const ClientBooking = () => {
                 <PartyPopper className="w-16 h-16 text-primary mx-auto" />
               </motion.div>
               <h3 className="font-serif text-2xl font-bold gold-text">Agendamento Confirmado!</h3>
-              <p className="text-muted-foreground text-sm">Você receberá os detalhes por email.</p>
+              <p className="text-muted-foreground text-sm">Seu agendamento foi registrado com sucesso.</p>
               <button onClick={resetBooking} className="gold-gradient text-primary-foreground font-medium px-6 py-3 rounded-xl hover:opacity-90 transition-all text-sm">
                 Novo Agendamento
               </button>

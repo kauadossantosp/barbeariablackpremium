@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { getBarbershop } from "@/lib/storage";
 import Auth from "./pages/Auth";
 import ClientBooking from "./pages/client/ClientBooking";
 import ClientAppointments from "./pages/client/ClientAppointments";
@@ -23,31 +22,28 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children, role }: { children: React.ReactNode; role: 'client' | 'owner' | 'super_admin' }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
+  if (loading) return <div className="min-h-screen bg-background flex items-center justify-center"><div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" /></div>;
   if (!isAuthenticated) return <Navigate to="/" replace />;
   if (user?.role !== role) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
 const OwnerGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth();
-  const shop = user?.barbershopId ? getBarbershop(user.barbershopId) : null;
-  if (shop && shop.plan_status === 'expired') {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="glass-card p-8 max-w-md text-center space-y-4">
-          <h2 className="text-2xl font-serif font-bold text-foreground">Plano Expirado</h2>
-          <p className="text-muted-foreground text-sm">Seu plano expirou. Entre em contato com o administrador para renovar.</p>
-          <p className="text-xs text-muted-foreground">ID: {shop.id}</p>
-        </div>
-      </div>
-    );
-  }
+  // Plan check can be done via fetching barbershop data in the owner pages themselves
   return <>{children}</>;
 };
 
 const AppRoutes = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <Routes>

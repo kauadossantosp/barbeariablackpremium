@@ -1,22 +1,30 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, DollarSign, TrendingUp, Users, Scissors, BarChart3, Clock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAppointments, getServices, getBarbers } from '@/lib/storage';
+import { fetchAppointments, fetchServices, fetchBarbers } from '@/lib/supabase-queries';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 const Dashboard = () => {
   const { user } = useAuth();
   const shopId = user?.barbershopId || '';
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [barbers, setBarbers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!shopId) return;
+    Promise.all([
+      fetchAppointments(shopId),
+      fetchServices(shopId),
+      fetchBarbers(shopId),
+    ]).then(([a, s, b]) => { setAppointments(a); setServices(s); setBarbers(b); });
+  }, [shopId]);
 
   const data = useMemo(() => {
-    const appointments = getAppointments(shopId);
-    const services = getServices(shopId);
-    const barbers = getBarbers(shopId);
     const today = new Date().toISOString().split('T')[0];
-
     const todayApts = appointments.filter(a => a.date === today && a.status !== 'cancelled');
-    const revenueToday = todayApts.reduce((sum, a) => sum + a.servicePrice, 0);
+    const revenueToday = todayApts.reduce((sum, a) => sum + Number(a.service_price), 0);
 
     const currentMonth = new Date().getMonth();
     const monthApts = appointments.filter(a => {
@@ -24,37 +32,32 @@ const Dashboard = () => {
       return m === currentMonth && a.status !== 'cancelled';
     });
     const monthCompleted = monthApts.filter(a => a.status === 'completed');
-    const revenueMonth = monthApts.reduce((sum, a) => sum + a.servicePrice, 0);
+    const revenueMonth = monthApts.reduce((sum, a) => sum + Number(a.service_price), 0);
     const avgTicket = monthApts.length > 0 ? Math.round(revenueMonth / monthApts.length) : 0;
-    const monthCommission = monthCompleted.reduce((s, a) => s + (a.barber_earning || 0), 0);
-    const monthProfit = monthCompleted.reduce((s, a) => s + a.servicePrice, 0) - monthCommission;
+    const monthCommission = monthCompleted.reduce((s, a) => s + Number(a.barber_earning || 0), 0);
 
-    // Service popularity
     const serviceCount: Record<string, number> = {};
     monthApts.forEach(a => {
-      serviceCount[a.serviceName] = (serviceCount[a.serviceName] || 0) + 1;
+      const name = a.service_name || 'Serviço';
+      serviceCount[name] = (serviceCount[name] || 0) + 1;
     });
     const topServices = Object.entries(serviceCount)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
+      .sort(([, a], [, b]) => b - a).slice(0, 5)
       .map(([name, count]) => ({ name: name.length > 15 ? name.slice(0, 15) + '…' : name, count }));
 
-    // Revenue last 7 days
     const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
+      const d = new Date(); d.setDate(d.getDate() - (6 - i));
       const iso = d.toISOString().split('T')[0];
       const dayApts = appointments.filter(a => a.date === iso && a.status !== 'cancelled');
-      const revenue = dayApts.reduce((s, a) => s + a.servicePrice, 0);
+      const revenue = dayApts.reduce((s, a) => s + Number(a.service_price), 0);
       return { day: d.toLocaleDateString('pt-BR', { weekday: 'short' }), revenue };
     });
 
-    // Occupancy rate
     const totalSlots = barbers.length * 8 * 2;
     const occupancy = totalSlots > 0 ? Math.round((todayApts.length / totalSlots) * 100) : 0;
 
-    return { todayApts: todayApts.length, revenueToday, revenueMonth, avgTicket, monthCommission, monthProfit, topServices, last7Days, occupancy, totalBarbers: barbers.length, totalServices: services.filter(s => s.active).length };
-  }, [shopId]);
+    return { todayApts: todayApts.length, revenueToday, revenueMonth, avgTicket, monthCommission, topServices, last7Days, occupancy, totalBarbers: barbers.length, totalServices: services.filter(s => s.active).length };
+  }, [appointments, services, barbers]);
 
   const stats = [
     { label: 'Agendamentos Hoje', value: data.todayApts, icon: Calendar, color: 'text-info' },
@@ -70,7 +73,6 @@ const Dashboard = () => {
         <p className="text-muted-foreground mt-1">Visão geral do seu negócio</p>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         {stats.map((stat, i) => (
           <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -84,9 +86,7 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Revenue Chart */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
           className="glass-card p-5 lg:col-span-2">
           <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -108,7 +108,6 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </motion.div>
 
-        {/* Quick Stats */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
           className="glass-card p-5 space-y-5">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
@@ -137,7 +136,6 @@ const Dashboard = () => {
         </motion.div>
       </div>
 
-      {/* Top Services */}
       {data.topServices.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
           className="glass-card p-5">

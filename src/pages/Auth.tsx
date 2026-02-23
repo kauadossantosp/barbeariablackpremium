@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Scissors, Crown, User, ArrowLeft, Check, Sparkles } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { createUser, getUser } from '@/lib/storage';
+import { toast } from 'sonner';
 
 type AuthMode = 'select' | 'login-client' | 'login-owner' | 'register-client';
 
@@ -13,28 +13,34 @@ const Auth = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const { login, signup } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = (role: 'client' | 'owner' | 'super_admin') => {
+  const handleLogin = async (expectedRole: 'client' | 'owner') => {
     setError('');
     if (!email || !password) { setError('Preencha todos os campos'); return; }
-    const user = getUser(email);
-    if (!user) { setError('Usuário não encontrado'); return; }
-    if (user.role !== role) { setError(`Esta conta não é de ${role === 'client' ? 'cliente' : role === 'owner' ? 'proprietário' : 'administrador'}`); return; }
-    if (login(email, password)) {
-      navigate(role === 'client' ? '/client' : '/owner');
-    } else {
-      setError('Senha incorreta');
+    setIsLoading(true);
+    const result = await login(email, password);
+    setIsLoading(false);
+    if (!result.success) {
+      setError(result.error === 'Invalid login credentials' ? 'Email ou senha incorretos' : result.error || 'Erro ao fazer login');
     }
+    // Navigation is handled by App.tsx based on role after auth state changes
   };
 
-  const handleRegisterClient = () => {
+  const handleRegisterClient = async () => {
     setError('');
     if (!name || !email || !password) { setError('Preencha todos os campos'); return; }
-    if (getUser(email)) { setError('Email já cadastrado'); return; }
-    createUser({ email, password, name, role: 'client' });
-    if (login(email, password)) navigate('/client');
+    if (password.length < 6) { setError('A senha deve ter pelo menos 6 caracteres'); return; }
+    setIsLoading(true);
+    const result = await signup(email, password, name);
+    setIsLoading(false);
+    if (!result.success) {
+      setError(result.error === 'User already registered' ? 'Email já cadastrado' : result.error || 'Erro ao criar conta');
+    } else {
+      toast.success('Conta criada! Verifique seu email para confirmar.');
+    }
   };
 
   const fadeVariant = {
@@ -62,11 +68,12 @@ const Auth = () => {
         <div>
           <label className="text-sm text-muted-foreground mb-1 block">Senha</label>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
+            onKeyDown={e => e.key === 'Enter' && handleLogin(role)}
             className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
         </div>
-        <button onClick={() => handleLogin(role)}
-          className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all">
-          Entrar
+        <button onClick={() => handleLogin(role)} disabled={isLoading}
+          className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all disabled:opacity-50">
+          {isLoading ? 'Entrando...' : 'Entrar'}
         </button>
         {role === 'client' && (
           <button onClick={() => { setMode('register-client'); setError(''); }}
@@ -154,9 +161,9 @@ const Auth = () => {
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
                     className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
                 </div>
-                <button onClick={handleRegisterClient}
-                  className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all">
-                  Criar Conta
+                <button onClick={handleRegisterClient} disabled={isLoading}
+                  className="w-full gold-gradient text-primary-foreground font-semibold py-3 rounded-xl hover:opacity-90 transition-all disabled:opacity-50">
+                  {isLoading ? 'Criando...' : 'Criar Conta'}
                 </button>
                 <button onClick={() => { setMode('login-client'); setError(''); }}
                   className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-all">
