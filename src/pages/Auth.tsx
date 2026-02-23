@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Scissors, Crown, User, ArrowLeft, Check, Sparkles } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,7 +14,6 @@ const Auth = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, signup } = useAuth();
-  const navigate = useNavigate();
 
   const handleLogin = async (expectedRole: 'client' | 'owner') => {
     setError('');
@@ -24,7 +22,18 @@ const Auth = () => {
     const result = await login(email, password);
     setIsLoading(false);
     if (!result.success) {
-      setError(result.error === 'Invalid login credentials' ? 'Email ou senha incorretos' : result.error || 'Erro ao fazer login');
+      if (result.error === 'Email not confirmed') {
+        setError('Confirme seu email antes de entrar.');
+      } else {
+        setError(result.error === 'Invalid login credentials' ? 'Email ou senha incorretos' : result.error || 'Erro ao fazer login');
+      }
+      return;
+    }
+
+    if (result.user && result.user.role !== expectedRole) {
+      setError(expectedRole === 'owner'
+        ? 'Este usuário não tem acesso de proprietário.'
+        : 'Este usuário não tem acesso de cliente.');
     }
     // Navigation is handled by App.tsx based on role after auth state changes
   };
