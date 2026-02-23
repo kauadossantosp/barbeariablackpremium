@@ -66,7 +66,14 @@ const AppRoutes = () => {
       <Route path="/owner/settings" element={<ProtectedRoute role="owner"><OwnerGuard><OwnerLayout><OwnerSettings /></OwnerLayout></OwnerGuard></ProtectedRoute>} />
 
       {/* Admin Routes */}
-      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route
+        path="/admin/login"
+        element={
+          isAuthenticated
+            ? <Navigate to={user?.role === "super_admin" ? "/admin" : "/"} replace />
+            : <AdminLogin />
+        }
+      />
       <Route path="/admin" element={<ProtectedRoute role="super_admin"><SuperAdmin /></ProtectedRoute>} />
 
       <Route path="*" element={<NotFound />} />
