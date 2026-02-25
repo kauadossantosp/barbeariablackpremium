@@ -13,7 +13,7 @@ export interface AppUser {
 interface AuthContextType {
   user: AppUser | null;
   supabaseUser: SupabaseUser | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: AppUser | null }>;
   signup: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
@@ -46,8 +46,6 @@ async function fetchAppUser(supabaseUser: SupabaseUser): Promise<AppUser | null>
     .select('role, barbershop_id')
     .eq('user_id', supabaseUser.id);
 
-  if (!profile) return null;
-
   // Determine primary role
   let role: AppUser['role'] = 'client';
   let barbershopId: string | undefined;
@@ -65,11 +63,34 @@ async function fetchAppUser(supabaseUser: SupabaseUser): Promise<AppUser | null>
 
   return {
     id: supabaseUser.id,
-    email: profile.email || supabaseUser.email || '',
-    name: profile.name || '',
+    email: profile?.email || supabaseUser.email || '',
+    name: profile?.name || String(supabaseUser.user_metadata?.name || ''),
     role,
     barbershopId,
   };
+}
+
+async function ensureAuthData(supabaseUser: SupabaseUser): Promise<void> {
+  const profilePayload = {
+    id: supabaseUser.id,
+    email: supabaseUser.email || '',
+    name: String(supabaseUser.user_metadata?.name || ''),
+  };
+
+  await supabase.from('profiles').upsert(profilePayload, { onConflict: 'id' });
+
+  const { data: roles } = await supabase
+    .from('user_roles')
+    .select('id')
+    .eq('user_id', supabaseUser.id)
+    .limit(1);
+
+  if (!roles || roles.length === 0) {
+    await supabase.from('user_roles').insert({
+      user_id: supabaseUser.id,
+      role: 'client' as const,
+    });
+  }
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -84,6 +105,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSupabaseUser(session.user);
         // Use setTimeout to avoid deadlock with Supabase auth
         setTimeout(async () => {
+          await ensureAuthData(session.user);
           const appUser = await fetchAppUser(session.user);
           setUser(appUser);
           setLoading(false);
@@ -99,6 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         setSupabaseUser(session.user);
+        await ensureAuthData(session.user);
         const appUser = await fetchAppUser(session.user);
         setUser(appUser);
       }
@@ -108,10 +131,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: AppUser | null }> => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { success: false, error: error.message };
-    return { success: true };
+    if (data.user) {
+      await ensureAuthData(data.user);
+      const appUser = await fetchAppUser(data.user);
+      return { success: true, user: appUser };
+    }
+    return { success: true, user: null };
   };
 
   const signup = async (email: string, password: string, name: string): Promise<{ success: boolean; error?: string }> => {
@@ -122,12 +150,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
     if (error) return { success: false, error: error.message };
 
-    // Auto-assign client role
     if (data.user) {
-      await supabase.from('user_roles').insert({
-        user_id: data.user.id,
-        role: 'client' as const,
-      });
+      await ensureAuthData(data.user);
     }
 
     return { success: true };

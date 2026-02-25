@@ -19,7 +19,12 @@ const AdminLogin = () => {
     const result = await login(email, password);
     setIsLoading(false);
     if (!result.success) {
-      setError('Credenciais inválidas');
+      setError(result.error === 'Email not confirmed' ? 'Confirme seu email antes de entrar.' : 'Credenciais inválidas');
+      return;
+    }
+
+    if (result.user?.role !== 'super_admin') {
+      setError('Este usuário não possui acesso de administrador.');
     }
     // Navigation handled by App.tsx after auth state changes
   };
